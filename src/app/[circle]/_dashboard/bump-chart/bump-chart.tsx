@@ -2,16 +2,18 @@ import { curveMonotoneX, line } from "d3-shape"
 import { BumpChartProvider, useChart } from "./bump-chart-context"
 import { GameRecord } from "./types"
 import { cn } from "@/lib/utils"
-import { motion, SVGMotionProps } from "framer-motion"
+import { AnimatePresence, motion, SVGMotionProps } from "framer-motion"
 import { useEffect, useReducer } from "react"
 import { useState } from "react"
 
 type Props = {
   data: GameRecord[][]
   selectedMemberId: number
+  selectedGameIndex: number | null
+  onGameSelect: (index: number | null) => void
 }
 
-export function BumpChart({ data, selectedMemberId }: Props) {
+export function BumpChart({ data, selectedMemberId, selectedGameIndex, onGameSelect }: Props) {
   const itemWidth = 50
   const itemHeight = 32
   const padding = 8
@@ -30,10 +32,11 @@ export function BumpChart({ data, selectedMemberId }: Props) {
     >
       <div className="flex justify-end">
         <svg width={width} height={height} className="">
-          {/* <HoverCols /> */}
+          <HoverCols onSelect={onGameSelect} />
           <MemberLines />
+          {selectedGameIndex !== null && <GameSessionSpotlight gameIndex={selectedGameIndex} />}
           <FirstGameDots />
-          <WinningLineWithDots memberId={selectedMemberId} />
+          {selectedGameIndex == null && <WinningLineWithDots memberId={selectedMemberId} />}
         </svg>
       </div>
     </BumpChartProvider>
@@ -93,8 +96,52 @@ function MemberLines() {
           initial={{ opacity: 0, pathLength: 0 }}
           animate={{ opacity: [0, 1, 1], pathLength: 1 }}
           transition={{ duration: 0.1 * games.length }}
+          className="pointer-events-none"
         />
       ))}
+    </>
+  )
+}
+
+function GameSessionSpotlight({ gameIndex }: { gameIndex: number }) {
+  const { gamesByMember, data } = useChart()
+
+  const selectedGameRecords = gameIndex !== null ? data[gameIndex] : null
+  const participants = selectedGameRecords?.filter((record) => record.played)
+
+  return (
+    <>
+      {participants &&
+        participants.map((record) => {
+          return (
+            <MemberLine
+              key={`member-line-spotlight-${record.member.id}`}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: [0, 1, 1] }}
+              transition={{ duration: 0.1 * data.length }}
+              memberId={record.member.id}
+              className="stroke-primary stroke-1"
+            />
+          )
+        })}
+      {participants &&
+        participants.map((record) => {
+          return (
+            <Dot
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: 0.1 }}
+              key={`member-spotlight-dot-${record.member.id}-${gameIndex}`}
+              gameIndex={gameIndex}
+              rank={record.rank}
+              r={3}
+              className={cn(
+                "fill-background stroke-primary stroke-1",
+                record.won ? "fill-primary" : "",
+              )}
+            />
+          )
+        })}
     </>
   )
 }
@@ -144,7 +191,7 @@ function MemberLine({ memberId, className, ...props }: MemberLineProps) {
       {...props}
       d={lineGenerator(myGames) || ""}
       fill="none"
-      className={cn("stroke-secondary stroke-1", className)}
+      className={cn("pointer-events-none stroke-secondary stroke-1", className)}
       data-m={memberId}
     />
   )
@@ -166,44 +213,76 @@ function Dot({ gameIndex, rank, className, ...props }: DotProps) {
       cy={yScale(rank)}
       r={3}
       {...props}
-      className={cn("fill-accent stroke-accent", className)}
+      className={cn("pointer-events-none fill-accent stroke-accent", className)}
     />
   )
 }
 
-function HoverCols() {
+type HoverColsProps = {
+  onSelect: (index: number | null) => void
+}
+
+function HoverCols({ onSelect }: HoverColsProps) {
   const { data, xScale, yScale } = useChart()
 
   const totalGames = data.length
-  const [hoveredIndex, setHoveredIndex] = useState<number | null>(4)
+  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null)
+
+  const hoverGameRecords = hoveredIndex !== null ? data[hoveredIndex] : null
 
   return (
     <>
-      {data.map((_, index) => (
-        <g key={`hover-col-${index}`} className="group">
-          <motion.rect
-            key={index}
-            x={xScale(totalGames - index) - 25}
-            width={50}
-            height="100%"
-            className="group fill-transparent"
-            onMouseEnter={() => setHoveredIndex(index)}
-            onMouseLeave={() => setHoveredIndex(null)}
-          />
-        </g>
-      ))}
-      {hoveredIndex !== null && (
-        <>
+      <AnimatePresence>
+        {data.map((_, index) => (
+          <g key={`hover-col-${index}`} className="group">
+            <motion.rect
+              key={index}
+              x={xScale(totalGames - index) - 25}
+              width={50}
+              height="100%"
+              className="group cursor-pointer fill-transparent"
+              onMouseEnter={() => setHoveredIndex(index)}
+              onMouseLeave={() => setHoveredIndex(null)}
+              onClick={() => onSelect(index)}
+            />
+          </g>
+        ))}
+
+        {hoveredIndex !== null && (
           <motion.line
-            key={`hover-line-${hoveredIndex}`}
-            x1={xScale(totalGames - hoveredIndex)}
-            y1={yScale(0)}
-            x2={xScale(totalGames - hoveredIndex)}
-            y2={yScale(data[hoveredIndex].length - 1)}
-            className="stroke-muted"
+            key={`hover-line`}
+            initial={{ opacity: 0 }}
+            animate={{
+              opacity: 1,
+              x1: xScale(totalGames - hoveredIndex),
+              x2: xScale(totalGames - hoveredIndex),
+            }}
+            exit={{ opacity: 0 }}
+            transition={{ type: "spring", stiffness: 1000, damping: 100, mass: 1 }}
+            y1={yScale(0) - 12}
+            y2={yScale(data[hoveredIndex].length - 1) + 12}
+            className="pointer-events-none stroke-secondary/30"
           />
-        </>
-      )}
+        )}
+      </AnimatePresence>
+
+      {hoveredIndex !== null &&
+        hoverGameRecords &&
+        hoverGameRecords.map(
+          (record) =>
+            record.played && (
+              <Dot
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ duration: 0.1, delay: hoveredIndex * 0.05 + 0.1 }}
+                key={`hover-dot-${record.member.id}-${hoveredIndex}`}
+                gameIndex={hoveredIndex}
+                rank={record.rank}
+                r={2}
+                className="fill-muted stroke-muted"
+              />
+            ),
+        )}
     </>
   )
 }
