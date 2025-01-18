@@ -21,6 +21,13 @@ export function BumpChart({ data, selectedMemberId, selectedGameIndex, onGameSel
   const width = data.length * itemWidth + padding * 2
   const height = data[0].length * itemHeight + padding * 2
 
+  const handleGameSelect = (index: number | null) => {
+    if (index === selectedGameIndex) {
+      onGameSelect(null)
+    } else {
+      onGameSelect(index)
+    }
+  }
   return (
     <BumpChartProvider
       data={data}
@@ -32,7 +39,7 @@ export function BumpChart({ data, selectedMemberId, selectedGameIndex, onGameSel
     >
       <div className="flex justify-end">
         <svg width={width} height={height} className="">
-          <HoverCols onSelect={onGameSelect} />
+          <HoverCols onSelect={handleGameSelect} />
           <MemberLines />
           {selectedGameIndex !== null && <GameSessionSpotlight gameIndex={selectedGameIndex} />}
           <FirstGameDots />
